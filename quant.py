@@ -16,13 +16,23 @@ class Day:
     @classmethod
     def from_row(cls, row):
         date = datetime.datetime.strptime(row[0], "%Y-%m-%d").date()
-        return Day(date, row[1], row[4], row[2], row[3])
+        return Day(date, float(row[1]), float(row[4]), float(row[2]), float(row[3]))
 
 class Put:
     def __init__(self, expiry, strike, premium):
         self.expiry = expiry
         self.strike = strike
         self.premium = premium
+        self.sold = False
+        self.profit = 0
+
+    def sell(self, day):
+        if self.sold:
+            raise ValueError("already sold")
+        self.sold = True
+        # assume we sell at close
+        if self.strike > day.close:
+            self.profit = self.strike - day.close
 
 class Strategy:
     """
@@ -43,20 +53,39 @@ class BuyPutStrategy(Strategy):
     """
     buy put and wait for collapse
     """
-    def __init__(self, strike_down, expiry_days):
+    def __init__(self, strike_down, expiry_days, premium=None):
         """
         strike_down: precent below current price at which we buy put
         expiry_days: in how many days put expires
         """
         self.strike_down = strike_down
         self.expiry_days = expiry_days
-        self.premium = calculate_premium(strike_down, expiry_days)
+        if premium is None:
+            self.premium = calculate_premium(strike_down, expiry_days)
+        else:
+            self.premium = premium
         self.puts = []
+        self.total_profit = 0
+        self.total_premium = 0
 
     def add_day(self, day):
+        # sell any put expiring today
+        for put in self.puts:
+            if put.expiry == day.date:
+                put.sell(day)
+                self.total_profit += put.profit
+                self.total_premium += put.premium
+
         # buy put
         # we assume we buy put at open
-        pass
+        expiry = day.date+datetime.timedelta(self.expiry_days)
+        strike = day.open*(1 - self.strike_down/100)
+        premium = day.open*self.premium/100
+        put = Put(expiry, strike, premium)
+        self.puts.append(put)
+
+    def profit(self):
+        return self.total_profit - self.total_premium
 
 def simulate(csv_path, strategy):
     with open(csv_path) as csv_file:
@@ -64,10 +93,13 @@ def simulate(csv_path, strategy):
         for i, row in enumerate(reader):
             if i == 0:
                 continue # skip header
-            strategy.add_day(Day.from_row(row))
+            day = Day.from_row(row)
+            strategy.add_day(day)
+            print("{}: profit: {} premium: {} net: {}".format(
+                    day.date, strategy.total_profit, strategy.total_premium, strategy.profit()))
 
 
-strategy = BuyPutStrategy(5, 15)
+strategy = BuyPutStrategy(5, 5,.013)
 
 simulate(sys.argv[1], strategy)
 
