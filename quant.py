@@ -29,11 +29,17 @@ class Strategy:
     base class for strategy
     """
     def add_day(self, day):
-        # buy put
-        # we assume we buy put at open
+        pass
 
+def calculate_premium(strike_down, expiry_days):
+    """
+    calculate based on how low the strike is below current price
+    and how any days for expiry
+    return percent of price
+    """
+    return strike_down*(expiry_days/5)/10
 
-class BuyPutStrategy:
+class BuyPutStrategy(Strategy):
     """
     buy put and wait for collapse
     """
@@ -48,6 +54,8 @@ class BuyPutStrategy:
         self.puts = []
 
     def add_day(self, day):
+        # buy put
+        # we assume we buy put at open
         pass
 
 def simulate(csv_path, strategy):
@@ -59,7 +67,7 @@ def simulate(csv_path, strategy):
             strategy.add_day(Day.from_row(row))
 
 
-strategy = BuyPutStrategy()
+strategy = BuyPutStrategy(5, 15)
 
 simulate(sys.argv[1], strategy)
 
