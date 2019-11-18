@@ -1,6 +1,8 @@
 import sys
+import os
 import csv
 import datetime
+import argparse
 
 class Day:
     """
@@ -38,8 +40,20 @@ class Strategy:
     """
     base class for strategy
     """
+    def __init__(self):
+        self.total_profit = 0
+        self.total_premium = 0
+
     def add_day(self, day):
         pass
+
+    def report(self):
+        print("profit: {} premium: {} net: {} return: {:.2f}%".format(
+                    self.total_profit, self.total_premium, self.profit()
+                    , self.profit()*100/self.total_premium))
+
+    def profit(self):
+        return self.total_profit - self.total_premium
 
 def calculate_premium(strike_down, expiry_days):
     """
@@ -57,7 +71,9 @@ class BuyPutStrategy(Strategy):
         """
         strike_down: precent below current price at which we buy put
         expiry_days: in how many days put expires
+        premium is in percent, so it makes sense with historical data
         """
+        super().__init__()
         self.strike_down = strike_down
         self.expiry_days = expiry_days
         if premium is None:
@@ -65,8 +81,6 @@ class BuyPutStrategy(Strategy):
         else:
             self.premium = premium
         self.puts = []
-        self.total_profit = 0
-        self.total_premium = 0
 
     def add_day(self, day):
         # sell any put expiring today
@@ -84,22 +98,48 @@ class BuyPutStrategy(Strategy):
         put = Put(expiry, strike, premium)
         self.puts.append(put)
 
-    def profit(self):
-        return self.total_profit - self.total_premium
 
-def simulate(csv_path, strategy):
-    with open(csv_path) as csv_file:
+def simulate(history, strategy):
+    for row in history:
+        day = Day.from_row(row)
+        strategy.add_day(day)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Calculate premium or profi')
+    parser.add_argument('--days', type=int, help='expiry days for PUT including today', required=True)
+    parser.add_argument('--premium', type=float, help='whats the premiunm')
+    parser.add_argument('--stock', type=str, help='Stock ticker', default='SPY')
+    parser.add_argument('--down', type=float, help='How much strike is down compared to current price.', required=True)
+
+    args = parser.parse_args()
+    stock_file = args.stock+'.csv'
+    if not os.path.exists(stock_file):
+        parser.error(f"Stock {args.stock} doesn't have a csv files")
+
+    with open(stock_file) as csv_file:
         reader = csv.reader(csv_file)
-        for i, row in enumerate(reader):
-            if i == 0:
-                continue # skip header
-            day = Day.from_row(row)
-            strategy.add_day(day)
-            print("{}: profit: {} premium: {} net: {}".format(
-                    day.date, strategy.total_profit, strategy.total_premium, strategy.profit()))
+        history = list(reader)[1:]
 
+    # lets take last valus as current price and calculate premium from there
+    day_rates = Day.from_row(history[-1])
 
-strategy = BuyPutStrategy(5, 5,.013)
+    if args.premium is not None:
+        premium_percent = args.premium*100/day_rates.open
+        strategy = BuyPutStrategy(args.down, args.days, premium_percent)
+        simulate(history, strategy)
+        strategy.report()
+    else:
+        # calculate break even premium
+        # assume premium from 0 to 2%
+        max_per = 2
+        mul = 1000
+        for i in range(max_per*mul):
+            premium_percent = i/mul
+            strategy = BuyPutStrategy(args.down, args.days, premium_percent)
+            simulate(history,  strategy)
+            if(strategy.profit()<0):
+                break
+            premium = premium_percent*day_rates.open/100
+            print(f"Premium {premium} profit: {strategy.profit()}")
 
-simulate(sys.argv[1], strategy)
 
